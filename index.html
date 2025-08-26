@@ -6,8 +6,8 @@
   <title>日本語形態素解析・頻度集計（ログイン不要）</title>
   <!-- Tailwind (CDN) for quick styling -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- kuromoji.js tokenizer (正しいパス: build/kuromoji.js) -->
-  <script src="https://unpkg.com/kuromoji@0.1.2/build/kuromoji.js"></script>
+  <!-- kuromoji.js tokenizer -->
+  <script src="./vendor/kuromoji.js"></script>
   <style>
     .mono { font-feature-settings: "palt"; }
     .spinner { border: 4px solid #e5e7eb; border-top: 4px solid #9ca3af; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
@@ -17,7 +17,7 @@
 <body class="bg-gray-50 text-gray-800">
   <div class="max-w-5xl mx-auto p-6 space-y-6">
     <header class="flex items-center justify-between">
-      <h1 class="text-2xl font-bold">日本語形態素解析・頻度集計（ブラウザ完結）3</h1>
+      <h1 class="text-2xl font-bold">日本語形態素解析・頻度集計（ブラウザ完結）4</h1>
       <a href="https://unpkg.com/kuromoji@0.1.2/" target="_blank" class="text-sm text-blue-600 underline">kuromoji.js</a>
     </header>
 
@@ -79,8 +79,56 @@
   </div>
 
   <script>
+    // --- fallback loader: ensure kuromoji.js is present (CDNブロック対策) ---
+    async function ensureKuromoji() {
+      if (typeof kuromoji !== 'undefined') return; // already loaded
+      // try alternate CDN
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js';
+        s.onload = resolve; s.onerror = reject; document.head.appendChild(s);
+      }).catch(() => {});
+      if (typeof kuromoji === 'undefined') {
+        alert('kuromoji.js が読み込めませんでした。校内ネットワークのCDN制限をご確認ください。');
+        throw new Error('kuromoji not loaded');
+      }
+    }
+
+    // Build kuromoji tokenizer (loads dictionary over the network once)
     let tokenizer = null;
-    const dictPath = "https://unpkg.com/kuromoji@0.1.2/dict/";
+let tokenizer = null;
+const dictPath = "./dict/";
+
+function buildTokenizer(timeoutMs = 15000) {
+  return new Promise((resolve, reject) => {
+    if (tokenizer) return resolve(tokenizer);
+    let settled = false;
+    const to = setTimeout(()=>{
+      if (!settled){ settled = true; reject(new Error('辞書の読み込みがタイムアウトしました。dict フォルダの配置とパスを確認してください。')); }
+    }, timeoutMs);
+    kuromoji.builder({ dicPath: dictPath }).build(function(err, t) {
+      if (settled) return;
+      clearTimeout(to);
+      if (err){ settled = true; return reject(err); }
+      tokenizer = t; settled = true; resolve(tokenizer);
+    });
+  });
+}(timeoutMs = 15000) {
+  return new Promise(async (resolve, reject) => {
+    if (tokenizer) return resolve(tokenizer);
+    try { await ensureKuromoji(); } catch(e){ return reject(e); }
+    let settled = false;
+    const to = setTimeout(()=>{
+      if (!settled){ settled = true; reject(new Error('辞書の読み込みがタイムアウトしました。CDNやネットワーク設定をご確認ください。')); }
+    }, timeoutMs);
+    kuromoji.builder({ dicPath: activeCdn.dict }).build(function(err, t) {
+      if (settled) return;
+      clearTimeout(to);
+      if (err){ settled = true; return reject(err); }
+      tokenizer = t; settled = true; resolve(tokenizer);
+    });
+  });
+}
 
     function buildTokenizer() {
       return new Promise((resolve, reject) => {
@@ -96,19 +144,24 @@
     function analyze(text, { keepStopwords=false, useLemma=true } = {}) {
       if (!tokenizer) throw new Error("Tokenizer not ready");
       const tokens = tokenizer.tokenize(text || "");
+      // Count frequencies
       const counter = new Map();
       for (const tk of tokens) {
-        const pos = tk.pos;
+        const pos = tk.pos; // 名詞/動詞/形容詞/助詞/助動詞など
+        // Skip stop-like POS unless keepStopwords
         const isStop = (pos === "助詞" || pos === "助動詞" || pos === "記号" || pos === "補助記号" || pos === "連体詞");
         if (!keepStopwords && isStop) continue;
+        // Lemma
         const base = (useLemma && tk.basic_form && tk.basic_form !== "*") ? tk.basic_form : tk.surface_form;
         const key = base;
         const item = counter.get(key) || { surface: base, pos, yomi: tk.reading || "", freq: 0 };
         item.freq += 1;
+        // Prefer a content POS if multiple
         if (item.pos !== pos && (pos === "名詞" || pos === "動詞" || pos === "形容詞")) item.pos = pos;
         if (!item.yomi && tk.reading) item.yomi = tk.reading;
         counter.set(key, item);
       }
+      // Sort by frequency desc, then surface asc
       return Array.from(counter.values()).sort((a,b)=> b.freq - a.freq || a.surface.localeCompare(b.surface, 'ja'));
     }
 
@@ -153,6 +206,7 @@
     }
 
     async function run(){
+      await ensureKuromoji();
       const btn = document.getElementById('analyzeBtn');
       const loading = document.getElementById('loading');
       btn.disabled = true; loading.classList.remove('hidden');
@@ -163,7 +217,7 @@
         const lemma = document.getElementById('useLemma').checked;
         const rows = analyze(text, { keepStopwords: keep, useLemma: lemma });
         renderTable(rows);
-        window.__rows = rows;
+        window.__rows = rows; // expose for CSV/clipboard
       } catch (e) {
         alert('解析でエラーが発生しました: ' + (e && e.message ? e.message : e));
         console.error(e);
