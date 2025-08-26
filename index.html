@@ -218,14 +218,6 @@
         if (copyBtn) copyBtn.addEventListener('click', async () => {
           const rows = window.__rows || [];
           if (!rows.length) return alert('まだ結果がありません。先に「解析」を実行してください。');
-          const tsv = ['token\tpos\tfreq\treading']
-            .concat(rows.map(r => [r.surface, r.pos||'', r.freq, r.yomi||''].join('\t')))
-            .join('\n');
-          try {
-            await navigator.clipboard.writeText(tsv);
-            alert('表データをコピーしました（TSV）。スプレッドシートに貼り付けできます。');
-          } catch (e) { alert('コピーに失敗しました。'); }
-        });
           const tsv = ['token	pos	freq	reading']
             .concat(rows.map(r => [r.surface, r.pos||'', r.freq, r.yomi||''].join('	')))
             .join('
@@ -305,6 +297,7 @@
         summary.innerHTML = `⚠️ 見つからない辞書があります（${okCount}/${EXPECTED_DICT.length}）。パスやファイル名、配置を確認してください。`;
       }
     };
+    window.__manualRun = run;
   </script>
 </body>
 </html>
