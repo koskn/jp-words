@@ -216,15 +216,19 @@
           download('tokens_frequency.csv', toCsv(rows));
         });
         if (copyBtn) copyBtn.addEventListener('click', async () => {
-          const rows = window.__rows || [];
-          if (!rows.length) return alert('まだ結果がありません。先に「解析」を実行してください。');
-          const tsv = ['token	pos	freq	reading']
-            .concat(rows.map(r => [r.surface, r.pos||'', r.freq, r.yomi||''].join('	')))
-            .join('');
           try {
-            await navigator.clipboard.writeText(tsv);
+            const rows = window.__rows || [];
+            if (!rows.length) return alert('まだ結果がありません。先に「解析」を実行してください。');
+        
+            const tsvLines = ['token\tpos\tfreq\treading'].concat(
+              rows.map(r => [r.surface, r.pos || '', r.freq, r.yomi || ''].join('\t'))
+            );
+            await navigator.clipboard.writeText(tsvLines.join('\n'));
             alert('表データをコピーしました（TSV）。スプレッドシートに貼り付けできます。');
-          } catch (e) { alert('コピーに失敗しました。'); }
+          } catch (e) {
+            alert('コピーに失敗しました。');
+            console.error(e);
+          }
         });
         if (checkBtn) checkBtn.addEventListener('click', () => { if (typeof checkDict === 'function') checkDict(); else alert('checkDict 関数が定義されていません'); });
       } catch (err){
