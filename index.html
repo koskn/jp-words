@@ -79,6 +79,21 @@
   </div>
 
   <script>
+    // --- fallback loader: ensure kuromoji.js is present (CDNブロック対策) ---
+    async function ensureKuromoji() {
+      if (typeof kuromoji !== 'undefined') return; // already loaded
+      // try alternate CDN
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dist/kuromoji.js';
+        s.onload = resolve; s.onerror = reject; document.head.appendChild(s);
+      }).catch(() => {});
+      if (typeof kuromoji === 'undefined') {
+        alert('kuromoji.js が読み込めませんでした。校内ネットワークのCDN制限をご確認ください。');
+        throw new Error('kuromoji not loaded');
+      }
+    }
+
     // Build kuromoji tokenizer (loads dictionary over the network once)
     let tokenizer = null;
     const dictPath = "https://unpkg.com/kuromoji@0.1.2/dict/";
