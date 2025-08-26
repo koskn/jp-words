@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>日本語形態素解析・頻度集計（ログイン不要）</title>
+  <!-- Tailwind (CDN) for quick styling -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- kuromoji.js tokenizer -->
+  <script src="https://unpkg.com/kuromoji@0.1.2/dist/kuromoji.js"></script>
+  <style>
+    .mono { font-feature-settings: "palt"; }
+    .spinner { border: 4px solid #e5e7eb; border-top: 4px solid #9ca3af; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
+    @keyframes spin { 100% { transform: rotate(360deg); } }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+  <div class="max-w-5xl mx-auto p-6 space-y-6">
+    <header class="flex items-center justify-between">
+      <h1 class="text-2xl font-bold">日本語形態素解析・頻度集計（ブラウザ完結）</h1>
+      <a href="https://unpkg.com/kuromoji@0.1.2/" target="_blank" class="text-sm text-blue-600 underline">kuromoji.js</a>
+    </header>
+
+    <section class="bg-white shadow rounded-2xl p-5 space-y-3">
+      <p class="text-sm text-gray-600">テキストを貼り付けて「解析」ボタンを押すだけ。<b>ログイン不要・インストール不要・端末内で完結</b>します（ネット接続は辞書読み込みに使用）。</p>
+      <div class="grid gap-3">
+        <textarea id="inputText" class="w-full h-40 p-3 border rounded-xl focus:outline-none focus:ring" placeholder="自由記述をここに貼り付け…（複数行OK）"></textarea>
+        <div class="flex flex-wrap gap-3 items-center">
+          <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" id="keepStopwords" class="rounded" />
+            助詞・助動詞なども集計に含める
+          </label>
+          <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" id="useLemma" class="rounded" checked />
+            原形で集計（例：行く/行った→行く）
+          </label>
+          <button id="analyzeBtn" class="px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60">解析</button>
+          <div id="loading" class="hidden items-center gap-2 text-sm text-gray-600"><div class="spinner"></div> 解析中…</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="bg-white shadow rounded-2xl p-5 space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="font-semibold">頻度上位</h2>
+        <div class="flex gap-2">
+          <button id="downloadCsv" class="px-3 py-1.5 rounded-lg border hover:bg-gray-50">CSVをダウンロード</button>
+          <button id="copyTable" class="px-3 py-1.5 rounded-lg border hover:bg-gray-50">表をコピー</button>
+        </div>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm" id="resultTable">
+          <thead>
+            <tr class="bg-gray-100">
+              <th class="text-left p-2">語</th>
+              <th class="text-left p-2">品詞</th>
+              <th class="text-right p-2">頻度</th>
+              <th class="text-left p-2">読み</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="bg-white shadow rounded-2xl p-5 space-y-3">
+      <h2 class="font-semibold">2軸分類に使うには</h2>
+      <ol class="list-decimal list-inside text-sm space-y-1 text-gray-700">
+        <li>上の「CSVをダウンロード」で語頻度表を保存</li>
+        <li>Googleスプレッドシートにインポート</li>
+        <li>各語に <b>X軸/Y軸スコア</b>（1〜5など）を付ける列を追加</li>
+        <li>挿入→チャート→散布図で2軸マップを作成</li>
+      </ol>
+    </section>
+
+    <footer class="text-xs text-gray-500">© 授業・探究活動でご自由にお使いください（学内配布可）。
+      このページはブラウザで辞書を読み込みます：<code class="mono">https://unpkg.com/kuromoji@0.1.2/dict/</code>
+    </footer>
+  </div>
+
+  <script>
+    // Build kuromoji tokenizer (loads dictionary over the network once)
+    let tokenizer = null;
+    const dictPath = "https://unpkg.com/kuromoji@0.1.2/dict/";
+
+    function buildTokenizer() {
+      return new Promise((resolve, reject) => {
+        if (tokenizer) return resolve(tokenizer);
+        kuromoji.builder({ dicPath: dictPath }).build(function(err, t) {
+          if (err) return reject(err);
+          tokenizer = t;
+          resolve(tokenizer);
+        });
+      });
+    }
+
+    function analyze(text, { keepStopwords=false, useLemma=true } = {}) {
+      if (!tokenizer) throw new Error("Tokenizer not ready");
+      const tokens = tokenizer.tokenize(text || "");
+      // Count frequencies
+      const counter = new Map();
+      for (const tk of tokens) {
+        const pos = tk.pos; // 名詞/動詞/形容詞/助詞/助動詞など
+        // Skip stop-like POS unless keepStopwords
+        const isStop = (pos === "助詞" || pos === "助動詞" || pos === "記号" || pos === "補助記号" || pos === "連体詞");
+        if (!keepStopwords && isStop) continue;
+        // Lemma
+        const base = (useLemma && tk.basic_form && tk.basic_form !== "*") ? tk.basic_form : tk.surface_form;
+        const key = base;
+        const item = counter.get(key) || { surface: base, pos, yomi: tk.reading || "", freq: 0 };
+        item.freq += 1;
+        // Prefer a content POS if multiple
+        if (item.pos !== pos && (pos === "名詞" || pos === "動詞" || pos === "形容詞")) item.pos = pos;
+        if (!item.yomi && tk.reading) item.yomi = tk.reading;
+        counter.set(key, item);
+      }
+      // Sort by frequency desc, then surface asc
+      return Array.from(counter.values()).sort((a,b)=> b.freq - a.freq || a.surface.localeCompare(b.surface, 'ja'));
+    }
+
+    function renderTable(rows) {
+      const tbody = document.querySelector('#resultTable tbody');
+      tbody.innerHTML = '';
+      for (const r of rows) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="p-2">${escapeHtml(r.surface)}</td>
+          <td class="p-2">${escapeHtml(r.pos || '')}</td>
+          <td class="p-2 text-right">${r.freq}</td>
+          <td class="p-2">${escapeHtml(r.yomi || '')}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+    }
+
+    function escapeHtml(s){
+      return String(s).replace(/[&<>\"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;','\'':'&#39;'}[m]));
+    }
+
+    function toCsv(rows){
+      const header = ['token','pos','freq','reading'];
+      const lines = [header.join(',')];
+      for (const r of rows) {
+        const cols = [r.surface, r.pos || '', r.freq, r.yomi || ''].map(v => {
+          const s = String(v ?? '');
+          return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+        });
+        lines.push(cols.join(','));
+      }
+      return lines.join('\n');
+    }
+
+    function download(filename, text){
+      const blob = new Blob([text], {type: 'text/csv;charset=utf-8;'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename; a.click();
+      setTimeout(()=>URL.revokeObjectURL(url), 1000);
+    }
+
+    async function run(){
+      const btn = document.getElementById('analyzeBtn');
+      const loading = document.getElementById('loading');
+      btn.disabled = true; loading.classList.remove('hidden');
+      try {
+        await buildTokenizer();
+        const text = document.getElementById('inputText').value;
+        const keep = document.getElementById('keepStopwords').checked;
+        const lemma = document.getElementById('useLemma').checked;
+        const rows = analyze(text, { keepStopwords: keep, useLemma: lemma });
+        renderTable(rows);
+        window.__rows = rows; // expose for CSV/clipboard
+      } catch (e) {
+        alert('解析でエラーが発生しました: ' + (e && e.message ? e.message : e));
+        console.error(e);
+      } finally {
+        btn.disabled = false; loading.classList.add('hidden');
+      }
+    }
+
+    document.getElementById('analyzeBtn').addEventListener('click', run);
+
+    document.getElementById('downloadCsv').addEventListener('click', () => {
+      const rows = window.__rows || [];
+      if (!rows.length) return alert('まだ結果がありません。先に「解析」を実行してください。');
+      download('tokens_frequency.csv', toCsv(rows));
+    });
+
+    document.getElementById('copyTable').addEventListener('click', async () => {
+      const rows = window.__rows || [];
+      if (!rows.length) return alert('まだ結果がありません。先に「解析」を実行してください。');
+      const tsv = ['token\tpos\tfreq\treading']
+        .concat(rows.map(r => [r.surface, r.pos||'', r.freq, r.yomi||''].join('\t')))
+        .join('\n');
+      try {
+        await navigator.clipboard.writeText(tsv);
+        alert('表データをコピーしました（TSV）。スプレッドシートに貼り付けできます。');
+      } catch (e) {
+        alert('コピーに失敗しました。');
+      }
+    });
+  </script>
+</body>
+</html>
