@@ -35,7 +35,7 @@
             <input type="checkbox" id="useLemma" class="rounded" checked />
             原形で集計（例：行く/行った→行く）
           </label>
-          <button id="analyzeBtn" class="px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60">解析</button>
+          <button id="analyzeBtn" onclick="window.__manualRun && window.__manualRun()" class="px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60">解析</button>
           <div id="loading" class="hidden items-center gap-2 text-sm text-gray-600"><div class="spinner"></div> 解析中…</div>
         </div>
       </div>
