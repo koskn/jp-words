@@ -220,8 +220,7 @@
           if (!rows.length) return alert('まだ結果がありません。先に「解析」を実行してください。');
           const tsv = ['token	pos	freq	reading']
             .concat(rows.map(r => [r.surface, r.pos||'', r.freq, r.yomi||''].join('	')))
-            .join('
-');
+            .join('');
           try {
             await navigator.clipboard.writeText(tsv);
             alert('表データをコピーしました（TSV）。スプレッドシートに貼り付けできます。');
