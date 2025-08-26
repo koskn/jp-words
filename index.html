@@ -14,13 +14,16 @@
 </head>
 <body class="bg-gray-50 text-gray-800">
   <div class="max-w-5xl mx-auto p-6 space-y-6">
-    <header class="flex items-center justify-between">$1</header>
+    <header class="flex items-center justify-between">
+      <h1 class="text-2xl font-bold">日本語形態素解析・頻度集計（ブラウザ完結）</h1>
+      <a href="https://unpkg.com/kuromoji@0.1.2/" target="_blank" class="text-sm text-blue-600 underline">kuromoji.js</a>
+    </header>
 
     <!-- エラー表示用バナー -->
     <div id="appError" class="hidden mt-3 p-3 rounded-xl bg-red-50 text-red-700 text-sm"></div>
 
     <section class="bg-white shadow rounded-2xl p-5 space-y-3">
-      <p class="text-sm text-gray-600">テキストを貼り付けて「解析」ボタンを押すだけ。<b>ログイン不要・インストール不要・端末内で完結</b>します。5</p>
+      <p class="text-sm text-gray-600">テキストを貼り付けて「解析」ボタンを押すだけ。<b>ログイン不要・インストール不要・端末内で完結</b>します。</p>
       <div class="grid gap-3">
         <textarea id="inputText" class="w-full h-40 p-3 border rounded-xl focus:outline-none focus:ring" placeholder="自由記述をここに貼り付け…（複数行OK）"></textarea>
         <div class="flex flex-wrap gap-3 items-center">
@@ -223,7 +226,16 @@
             alert('表データをコピーしました（TSV）。スプレッドシートに貼り付けできます。');
           } catch (e) { alert('コピーに失敗しました。'); }
         });
-        if (checkBtn) checkBtn.addEventListener('click', checkDict);
+          const tsv = ['token	pos	freq	reading']
+            .concat(rows.map(r => [r.surface, r.pos||'', r.freq, r.yomi||''].join('	')))
+            .join('
+');
+          try {
+            await navigator.clipboard.writeText(tsv);
+            alert('表データをコピーしました（TSV）。スプレッドシートに貼り付けできます。');
+          } catch (e) { alert('コピーに失敗しました。'); }
+        });
+        if (checkBtn) checkBtn.addEventListener('click', () => { if (typeof checkDict === 'function') checkDict(); else alert('checkDict 関数が定義されていません'); });
       } catch (err){
         const box = document.getElementById('appError');
         if (box){ box.textContent = '初期化エラー: ' + err.message; box.classList.remove('hidden'); }
@@ -231,6 +243,68 @@
       }
     });
     
+  // ---- 辞書ファイル存在チェック機能 ----
+    const EXPECTED_DICT = [
+      'base.dat.gz','cc.dat.gz','check.dat.gz','tid.dat.gz','tid_map.dat.gz','tid_pos.dat.gz',
+      'unk.dat.gz','unk_char.dat.gz','unk_compat.dat.gz','unk_invoke.dat.gz','unk_map.dat.gz','unk_pos.dat.gz'
+    ];
+
+    function clearDictTable(){
+      const tbody = document.querySelector('#dictCheckTable tbody');
+      if (tbody) tbody.innerHTML = '';
+      const summary = document.getElementById('dictSummary');
+      if (summary) summary.textContent = '';
+    }
+
+    function addDictRow({name, url, status, size, ok}){
+      const tbody = document.querySelector('#dictCheckTable tbody');
+      if (!tbody) return;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="p-2">${escapeHtml(name)}</td>
+        <td class="p-2"><a class="text-blue-600 underline" href="${url}" target="_blank">${escapeHtml(url)}</a></td>
+        <td class="p-2">${status}</td>
+        <td class="p-2">${size ?? ''}</td>
+        <td class="p-2 ${ok ? 'text-green-700' : 'text-red-700'}">${ok ? 'OK' : 'NG'}</td>
+      `;
+      tbody.appendChild(tr);
+    }
+
+    async function headOrGet(url){
+      try {
+        const res = await fetch(url, { method: 'GET', cache: 'no-store' });
+        const len = res.headers.get('content-length');
+        return { ok: res.ok, status: res.status, size: len };
+      } catch (e){
+        return { ok: false, status: 'ERR', size: '' };
+      }
+    }
+
+    window.checkDict = async function (){
+      clearDictTable();
+      const loading = document.getElementById('dictLoading');
+      if (loading) loading.classList.remove('hidden');
+
+      const dictBase = typeof dictPath === 'string' ? dictPath : './dict/';
+      let okCount = 0;
+
+      for (const name of EXPECTED_DICT){
+        const url = dictBase + name;
+        const r = await headOrGet(url);
+        if (r.ok) okCount++;
+        addDictRow({ name, url, status: r.status, size: r.size, ok: r.ok });
+      }
+
+      if (loading) loading.classList.add('hidden');
+
+      const summary = document.getElementById('dictSummary');
+      if (!summary) return;
+      if (okCount === EXPECTED_DICT.length){
+        summary.innerHTML = `✅ すべての辞書ファイル（${okCount}/${EXPECTED_DICT.length}）が見つかりました。`;
+      } else {
+        summary.innerHTML = `⚠️ 見つからない辞書があります（${okCount}/${EXPECTED_DICT.length}）。パスやファイル名、配置を確認してください。`;
+      }
+    };
   </script>
 </body>
 </html>
